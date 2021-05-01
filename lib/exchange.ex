@@ -37,7 +37,7 @@ defmodule Exchange do
     ...>    quantity: 10
     ...>    })
     :ok
-    iex(6)> Exchange.send_instruction(exchange_pid, %{
+    iex> Exchange.send_instruction(exchange_pid, %{
     ...>    instruction: :update,
     ...>    side: :ask,
     ...>    price_level_index: 2,
@@ -58,6 +58,15 @@ defmodule Exchange do
       %{ask_price: 60.0, ask_quantity: 10, bid_price: 50.0, bid_quantity: 40},
       %{ask_price: 70.0, ask_quantity: 20, bid_price: 40.0, bid_quantity: 40}
     ]
+    # If the event is for a price level that has not yet been created an error must be returned:
+    iex> Exchange.send_instruction(exchange_pid, %{
+    ...>    instruction: :update,
+    ...>    side: :ask,
+    ...>    price_level_index: 3,
+    ...>    price: 70.0,
+    ...>    quantity: 20
+    ...>    })
+    {:error, :price_level_not_existed}
   """
 
   use GenServer
@@ -90,8 +99,12 @@ defmodule Exchange do
   end
 
   def handle_call({:instr, event = %{instruction: :update}}, _from, state = %{order_book: ob}) do
-    updated_ob = SimpleListOrderBook.update(ob, Map.take(event, [:side, :quantity, :price_level_index, :price]))
-    {:reply, :ok, %{state | order_book: updated_ob}}
+    case SimpleListOrderBook.update(ob, Map.take(event, [:side, :quantity, :price_level_index, :price])) do
+      {:ok, updated_ob} ->
+        {:reply, :ok, %{state | order_book: updated_ob}}
+      {:error, :price_level_not_existed} = error ->
+        {:reply, error, state}
+    end
   end
 
   def handle_call({:order_book, book_depth}, _from, state = %{order_book: ob}) do
@@ -115,15 +128,32 @@ defmodule SimpleListOrderBook do
   end
 
   def update({bids, asks}, bid = %{price_level_index: pl_index, side: :bid}) do
-    {update_at(bids, pl_index, bid.price, bid.quantity), asks}
+    case update_at(bids, pl_index, bid.price, bid.quantity) do
+      {:error, _} = error ->
+        error
+
+      updated_bids ->
+        {:ok, {updated_bids, asks}}
+    end
   end
 
   def update({bids, asks}, ask = %{price_level_index: pl_index, side: :ask}) do
-    {bids, update_at(asks, pl_index, ask.price, ask.quantity)}
+    case update_at(asks, pl_index, ask.price, ask.quantity) do
+      {:error, _} = error ->
+        error
+
+      updated_asks ->
+        {:ok, {bids, updated_asks}}
+    end
   end
 
   defp update_at(list, pl_index, price, quantity) do
-    Kernel.update_in(list, [Access.at!(pl_index - 1)], fn pl -> %{pl | q: quantity, p: price} end)
+    try do
+      update_in(list, [Access.at!(pl_index - 1)], fn pl -> %{pl | q: quantity, p: price} end)
+    catch
+      _, _ ->
+        {:error, :price_level_not_existed}
+    end
   end
 
   defp insert_at([], 1, price, quantity) do
