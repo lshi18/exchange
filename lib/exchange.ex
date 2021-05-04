@@ -58,15 +58,6 @@ defmodule Exchange do
       %{ask_price: 60.0, ask_quantity: 10, bid_price: 50.0, bid_quantity: 40},
       %{ask_price: 70.0, ask_quantity: 20, bid_price: 40.0, bid_quantity: 40}
     ]
-    # If the event is for a price level that has not yet been created an error must be returned:
-    iex> Exchange.send_instruction(exchange_pid, %{
-    ...>    instruction: :update,
-    ...>    side: :ask,
-    ...>    price_level_index: 3,
-    ...>    price: 70.0,
-    ...>    quantity: 20
-    ...>    })
-    {:error, :price_level_not_existed}
   """
 
   use GenServer
