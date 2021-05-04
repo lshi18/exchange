@@ -62,6 +62,9 @@ defmodule Exchange do
 
   use GenServer
 
+  @sides [:bid, :ask]
+  @instr_types [:new, :update, :delete]
+
   @doc """
   Start link
   """
@@ -70,8 +73,17 @@ defmodule Exchange do
   end
 
   @spec send_instruction(pid(), map()) :: :ok
-  def send_instruction(pid, event) do
-    GenServer.call(pid, {:instr, event})
+  def send_instruction(
+        pid,
+        event = %{instruction: instr_type, price_level_index: index, side: side}
+      )
+      when index > 0 and side in @sides and instr_type in @instr_types do
+    order = Map.take(event, [:side, :price, :quantity])
+    GenServer.call(pid, {:instr, instr_type, index, order})
+  end
+
+  def send_instruction(_, event) do
+    raise("Event format error: #{event}")
   end
 
   def order_book(pid, book_depth) do
@@ -84,25 +96,28 @@ defmodule Exchange do
   end
 
   @impl true
-  def handle_call({:instr, event = %{instruction: :new}}, _from, state = %{order_book: ob}) do
-    updated_ob =
-      SimpleListOrderBook.insert(
-        ob,
-        Map.take(event, [:side, :quantity, :price_level_index, :price])
-      )
+  def handle_call({:instr, :new, index, order}, _from, state = %{order_book: ob}) do
+    updated_ob = SimpleListOrderBook.insert(ob, index, order)
 
     {:reply, :ok, %{state | order_book: updated_ob}}
   end
 
-  def handle_call({:instr, event = %{instruction: :update}}, _from, state = %{order_book: ob}) do
-    case SimpleListOrderBook.update(
-           ob,
-           Map.take(event, [:side, :quantity, :price_level_index, :price])
-         ) do
+  def handle_call({:instr, :update, index, order}, _from, state = %{order_book: ob}) do
+    case SimpleListOrderBook.update(ob, index, order) do
       {:ok, updated_ob} ->
         {:reply, :ok, %{state | order_book: updated_ob}}
 
-      {:error, :price_level_not_existed} = error ->
+      {:error, :price_level_not_exist} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  def handle_call({:instr, :delete, index, order}, _from, state = %{order_book: ob}) do
+    case SimpleListOrderBook.delete(ob, index, order) do
+      {:ok, updated_ob} ->
+        {:reply, :ok, %{state | order_book: updated_ob}}
+
+      {:error, :price_level_not_exist} = error ->
         {:reply, error, state}
     end
   end
@@ -118,16 +133,20 @@ defmodule SimpleListOrderBook do
     {[], []}
   end
 
-  def insert({bids, asks}, bid = %{price_level_index: pl_index, side: :bid}) do
-    {insert_at(bids, pl_index, bid.price, bid.quantity), asks}
+  def insert({bids, asks}, pl_index, order) do
+    case order.side do
+      :bid ->
+        updated_bids = insert_at(bids, pl_index, order.price, order.quantity)
+        {updated_bids, asks}
+
+      :ask ->
+        updated_asks = insert_at(asks, pl_index, order.price, order.quantity)
+        {bids, updated_asks}
+    end
   end
 
-  def insert({bids, asks}, ask = %{price_level_index: pl_index, side: :ask}) do
-    {bids, insert_at(asks, pl_index, ask.price, ask.quantity)}
-  end
-
-  def update({bids, asks}, bid = %{price_level_index: pl_index, side: :bid}) do
-    case update_at(bids, pl_index, bid.price, bid.quantity) do
+  def update({bids, asks}, pl_index, order = %{side: :bid}) do
+    case update_at(bids, pl_index, order.price, order.quantity) do
       {:error, _} = error ->
         error
 
@@ -136,8 +155,8 @@ defmodule SimpleListOrderBook do
     end
   end
 
-  def update({bids, asks}, ask = %{price_level_index: pl_index, side: :ask}) do
-    case update_at(asks, pl_index, ask.price, ask.quantity) do
+  def update({bids, asks}, pl_index, order = %{side: :ask}) do
+    case update_at(asks, pl_index, order.price, order.quantity) do
       {:error, _} = error ->
         error
 
@@ -146,29 +165,33 @@ defmodule SimpleListOrderBook do
     end
   end
 
-  defp update_at(list, pl_index, price, quantity) do
+  def delete({bids, asks}, pl_index, %{side: :bid}) do
     try do
-      update_in(list, [Access.at!(pl_index - 1)], fn pl -> %{pl | q: quantity, p: price} end)
-    catch
-      _, _ ->
-        {:error, :price_level_not_existed}
+      updated_bids = delete_at(bids, pl_index)
+      {:ok, {updated_bids, asks}}
+    rescue
+      ArgumentError ->
+        {:error, :price_level_not_exist}
     end
   end
 
-  defp insert_at([], 1, price, quantity) do
-    [%{q: quantity, p: price}]
-  end
-
-  defp insert_at([head | tail], 1, price, quantity) do
-    [%{q: quantity, p: price}, head | tail]
-  end
-
-  defp insert_at([head | tail], pl_index, price, quantity) do
-    [head | insert_at(tail, pl_index - 1, price, quantity)]
+  def delete({bids, asks}, pl_index, %{side: :ask}) do
+    try do
+      updated_asks = delete_at(asks, pl_index)
+      {:ok, {bids, updated_asks}}
+    rescue
+      ArgumentError ->
+        {:error, :price_level_not_exist}
+    end
   end
 
   def match_order({bids, asks}, order_depth) do
+    make_stream_with_defaults = fn orders ->
+      Stream.concat(orders, Stream.repeatedly(fn -> %{p: 0, q: 0} end))
+    end
+
     [bids, asks]
+    |> Stream.map(make_stream_with_defaults)
     |> Stream.zip()
     |> Enum.take(order_depth)
     |> Enum.map(fn {bid, ask} ->
@@ -180,4 +203,29 @@ defmodule SimpleListOrderBook do
       }
     end)
   end
+
+  # Helper functions
+
+  defp update_at(list, pl_index, price, quantity) do
+    try do
+      update_in(list, [Access.at!(pl_index - 1)], fn pl -> %{pl | q: quantity, p: price} end)
+    catch
+      _, _ ->
+        {:error, :price_level_not_exist}
+    end
+  end
+
+  defp insert_at([], 1, price, quantity), do: [%{q: quantity, p: price}]
+
+  defp insert_at([], pl_index, price, quantity),
+    do: [%{q: 0, p: 0} | insert_at([], pl_index - 1, price, quantity)]
+
+  defp insert_at([head | tail], 1, price, quantity), do: [%{q: quantity, p: price}, head | tail]
+
+  defp insert_at([head | tail], pl_index, price, quantity),
+    do: [head | insert_at(tail, pl_index - 1, price, quantity)]
+
+  defp delete_at([], _pl_index), do: raise(ArgumentError, "price_index_not_exist")
+  defp delete_at([_head | tail], 1), do: tail
+  defp delete_at([head | tail], pl_index), do: [head | delete_at(tail, pl_index - 1)]
 end
