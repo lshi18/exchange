@@ -1,27 +1,19 @@
 ExUnit.start()
 
 defmodule TestHelpers do
-  def new(order) do
-    Map.merge(order, %{instruction: :new})
+  def new(order, price_level_index) do
+    Map.merge(order, %{instruction: :new, price_level_index: price_level_index})
   end
 
-  def update(order) do
-    Map.merge(order, %{instruction: :update})
+  def update(order, price_level_index) do
+    Map.merge(order, %{instruction: :update, price_level_index: price_level_index})
   end
 
-  def delete(order) do
-    Map.merge(order, %{instruction: :delete})
+  def delete(order, price_level_index) do
+    Map.merge(order, %{instruction: :delete, price_level_index: price_level_index})
   end
 
-  def ask_order(price_level_index, price_quantity \\ []) do
-    order(:ask, price_level_index, price_quantity)
-  end
-
-  def bid_order(price_level_index, price_quantity \\ []) do
-    order(:bid, price_level_index, price_quantity)
-  end
-
-  defp order(side, price_level_index, price_quantity) do
-    Enum.into(price_quantity, %{side: side, price_level_index: price_level_index})
+  def order(side, price_quantity \\ []) do
+    Enum.into(price_quantity, %{side: side})
   end
 end
