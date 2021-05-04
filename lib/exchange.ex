@@ -64,12 +64,15 @@ defmodule Exchange do
 
   @sides [:bid, :ask]
   @instr_types [:new, :update, :delete]
+  @default_order_book SimpleListOrderBook
 
   @doc """
   Start link
   """
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, [], opts)
+    {order_book, opts} = Keyword.pop(opts, :order_book)
+    order_book = order_book || @default_order_book
+    GenServer.start_link(__MODULE__, [order_book: order_book], opts)
   end
 
   @spec send_instruction(pid(), map()) :: :ok
@@ -91,13 +94,13 @@ defmodule Exchange do
   end
 
   @impl true
-  def init(_opts) do
-    {:ok, %{order_book: SimpleListOrderBook.new()}}
+  def init(order_book: order_book) do
+    {:ok, %{order_book: order_book.new()}}
   end
 
   @impl true
   def handle_call({:instr, :new, index, order}, _from, state = %{order_book: ob}) do
-    updated_ob = SimpleListOrderBook.insert(ob, index, order)
+    {:ok, updated_ob} = SimpleListOrderBook.insert(ob, index, order)
 
     {:reply, :ok, %{state | order_book: updated_ob}}
   end
@@ -129,68 +132,69 @@ defmodule Exchange do
 end
 
 defmodule SimpleListOrderBook do
+  defstruct asks: [], bids: []
+
   def new() do
-    {[], []}
+    %__MODULE__{}
   end
 
-  def insert({bids, asks}, pl_index, order) do
+  def insert(%__MODULE__{} = ob, pl_index, order) do
     case order.side do
       :bid ->
-        updated_bids = insert_at(bids, pl_index, order.price, order.quantity)
-        {updated_bids, asks}
+        updated_bids = insert_at(ob.bids, pl_index, order.price, order.quantity)
+        {:ok, %{ob | bids: updated_bids}}
 
       :ask ->
-        updated_asks = insert_at(asks, pl_index, order.price, order.quantity)
-        {bids, updated_asks}
+        updated_asks = insert_at(ob.asks, pl_index, order.price, order.quantity)
+        {:ok, %{ob | asks: updated_asks}}
     end
   end
 
-  def update({bids, asks}, pl_index, order = %{side: :bid}) do
-    case update_at(bids, pl_index, order.price, order.quantity) do
-      {:error, _} = error ->
-        error
+  def update(%__MODULE__{} = ob, pl_index, order) do
+    case order.side do
+      :bid ->
+        updated_bids = update_at(ob.bids, pl_index, order.price, order.quantity)
+        {:bid, updated_bids}
 
-      updated_bids ->
-        {:ok, {updated_bids, asks}}
+      :ask ->
+        updated_asks = update_at(ob.asks, pl_index, order.price, order.quantity)
+        {:ask, updated_asks}
+    end
+    |> case do
+      {_side, :price_level_not_exist} ->
+        {:error, :price_level_not_exist}
+
+      {:bid, result} ->
+        {:ok, %{ob | bids: result}}
+
+      {:ask, result} ->
+        {:ok, %{ob | asks: result}}
     end
   end
 
-  def update({bids, asks}, pl_index, order = %{side: :ask}) do
-    case update_at(asks, pl_index, order.price, order.quantity) do
-      {:error, _} = error ->
-        error
-
-      updated_asks ->
-        {:ok, {bids, updated_asks}}
-    end
-  end
-
-  def delete({bids, asks}, pl_index, %{side: :bid}) do
+  def delete(%__MODULE__{} = ob, pl_index, order) do
     try do
-      updated_bids = delete_at(bids, pl_index)
-      {:ok, {updated_bids, asks}}
+      case order.side do
+        :bid ->
+          updated_bids = delete_at(ob.bids, pl_index)
+          {:ok, %{ob | bids: updated_bids}}
+
+        :ask ->
+          updated_asks = delete_at(ob.asks, pl_index)
+          {:ok, %{ob | asks: updated_asks}}
+      end
     rescue
       ArgumentError ->
         {:error, :price_level_not_exist}
     end
   end
 
-  def delete({bids, asks}, pl_index, %{side: :ask}) do
-    try do
-      updated_asks = delete_at(asks, pl_index)
-      {:ok, {bids, updated_asks}}
-    rescue
-      ArgumentError ->
-        {:error, :price_level_not_exist}
-    end
-  end
-
-  def match_order({bids, asks}, order_depth) do
+  def match_order(%__MODULE__{} = ob, order_depth) do
     make_stream_with_defaults = fn orders ->
       Stream.concat(orders, Stream.repeatedly(fn -> %{p: 0, q: 0} end))
     end
 
-    [bids, asks]
+    [ob.bids, ob.asks]
     |> Stream.map(make_stream_with_defaults)
     |> Stream.zip()
     |> Enum.take(order_depth)
@@ -211,7 +215,7 @@ defmodule SimpleListOrderBook do
       update_in(list, [Access.at!(pl_index - 1)], fn pl -> %{pl | q: quantity, p: price} end)
     catch
       _, _ ->
-        {:error, :price_level_not_exist}
+        :price_level_not_exist
     end
   end
 
