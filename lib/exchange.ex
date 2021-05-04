@@ -94,14 +94,23 @@ defmodule Exchange do
 
   @impl true
   def handle_call({:instr, event = %{instruction: :new}}, _from, state = %{order_book: ob}) do
-    updated_ob = SimpleListOrderBook.insert(ob, Map.take(event, [:side, :quantity, :price_level_index, :price]))
+    updated_ob =
+      SimpleListOrderBook.insert(
+        ob,
+        Map.take(event, [:side, :quantity, :price_level_index, :price])
+      )
+
     {:reply, :ok, %{state | order_book: updated_ob}}
   end
 
   def handle_call({:instr, event = %{instruction: :update}}, _from, state = %{order_book: ob}) do
-    case SimpleListOrderBook.update(ob, Map.take(event, [:side, :quantity, :price_level_index, :price])) do
+    case SimpleListOrderBook.update(
+           ob,
+           Map.take(event, [:side, :quantity, :price_level_index, :price])
+         ) do
       {:ok, updated_ob} ->
         {:reply, :ok, %{state | order_book: updated_ob}}
+
       {:error, :price_level_not_existed} = error ->
         {:reply, error, state}
     end
@@ -112,7 +121,6 @@ defmodule Exchange do
     {:reply, order_book, state}
   end
 end
-
 
 defmodule SimpleListOrderBook do
   def new() do
@@ -159,9 +167,11 @@ defmodule SimpleListOrderBook do
   defp insert_at([], 1, price, quantity) do
     [%{q: quantity, p: price}]
   end
+
   defp insert_at([head | tail], 1, price, quantity) do
     [%{q: quantity, p: price}, head | tail]
   end
+
   defp insert_at([head | tail], pl_index, price, quantity) do
     [head | insert_at(tail, pl_index - 1, price, quantity)]
   end
@@ -170,11 +180,13 @@ defmodule SimpleListOrderBook do
     [bids, asks]
     |> Stream.zip()
     |> Enum.take(order_depth)
-    |> Enum.map(fn {bid, ask} -> %{
-      ask_price: ask.p,
-      ask_quantity: ask.q,
-      bid_price: bid.p,
-      bid_quantity: bid.q
-    } end)
+    |> Enum.map(fn {bid, ask} ->
+      %{
+        ask_price: ask.p,
+        ask_quantity: ask.q,
+        bid_price: bid.p,
+        bid_quantity: bid.q
+      }
+    end)
   end
 end
