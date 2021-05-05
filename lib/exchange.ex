@@ -119,6 +119,7 @@ defmodule Exchange do
   @impl true
   @spec init(keyword()) :: {:ok, %{store: nil | Store.t(), order_book: OrderBook.t()}, {:continue, :init}}
   def init(opts) do
+    Process.flag(:trap_exit, true)
     state = Enum.into(opts, %{})
     {:ok, state, {:continue, :init}}
   end
