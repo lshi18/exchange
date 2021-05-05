@@ -2,62 +2,70 @@ defmodule Exchange do
   @moduledoc """
   Documentation for `Exchange`.
 
+  ## Usage
+
+  Exchange.start_link/1 receives an optional keyword argument. In particular,
+  an :order_book key and an OrderBook value can be specified. The OrderBook value
+  should be a datatype (struct) that implements the OrderBook protocol. If the
+  :order_book is not specified, then the default implementation of ListOrderBook
+  will be used.
+
   ## Examples
 
-    iex> {:ok, exchange_pid} = Exchange.start_link()
-    iex> Exchange.send_instruction(exchange_pid, %{
-    ...>    instruction: :new,
-    ...>    side: :bid,
-    ...>    price_level_index: 1,
-    ...>    price: 50.0,
-    ...>    quantity: 30
-    ...>    })
-    :ok
-    iex> Exchange.send_instruction(exchange_pid, %{
-    ...>    instruction: :new,
-    ...>    side: :bid,
-    ...>    price_level_index: 2,
-    ...>    price: 40.0,
-    ...>    quantity: 40
-    ...>    })
-    :ok
-    iex> Exchange.send_instruction(exchange_pid, %{
-    ...>    instruction: :new,
-    ...>    side: :ask,
-    ...>    price_level_index: 1,
-    ...>    price: 60.0,
-    ...>    quantity: 10
-    ...>    })
-    :ok
-    iex> Exchange.send_instruction(exchange_pid, %{
-    ...>    instruction: :new,
-    ...>    side: :ask,
-    ...>    price_level_index: 2,
-    ...>    price: 70.0,
-    ...>    quantity: 10
-    ...>    })
-    :ok
-    iex> Exchange.send_instruction(exchange_pid, %{
-    ...>    instruction: :update,
-    ...>    side: :ask,
-    ...>    price_level_index: 2,
-    ...>    price: 70.0,
-    ...>    quantity: 20
-    ...>    })
-    :ok
-    iex> Exchange.send_instruction(exchange_pid, %{
-    ...>    instruction: :update,
-    ...>    side: :bid,
-    ...>    price_level_index: 1,
-    ...>    price: 50.0,
-    ...>    quantity: 40
-    ...>    })
-    :ok
-    iex> Exchange.order_book(exchange_pid, 2)
-    [
-      %{ask_price: 60.0, ask_quantity: 10, bid_price: 50.0, bid_quantity: 40},
-      %{ask_price: 70.0, ask_quantity: 20, bid_price: 40.0, bid_quantity: 40}
-    ]
+      iex> {:ok, exchange_pid} = Exchange.start_link()
+      iex> Exchange.send_instruction(exchange_pid, %{
+      ...>    instruction: :new,
+      ...>    side: :bid,
+      ...>    price_level_index: 1,
+      ...>    price: 50.0,
+      ...>    quantity: 30
+      ...>    })
+      :ok
+      iex> Exchange.send_instruction(exchange_pid, %{
+      ...>    instruction: :new,
+      ...>    side: :bid,
+      ...>    price_level_index: 2,
+      ...>    price: 40.0,
+      ...>    quantity: 40
+      ...>    })
+      :ok
+      iex> Exchange.send_instruction(exchange_pid, %{
+      ...>    instruction: :new,
+      ...>    side: :ask,
+      ...>    price_level_index: 1,
+      ...>    price: 60.0,
+      ...>    quantity: 10
+      ...>    })
+      :ok
+      iex> Exchange.send_instruction(exchange_pid, %{
+      ...>    instruction: :new,
+      ...>    side: :ask,
+      ...>    price_level_index: 2,
+      ...>    price: 70.0,
+      ...>    quantity: 10
+      ...>    })
+      :ok
+      iex> Exchange.send_instruction(exchange_pid, %{
+      ...>    instruction: :update,
+      ...>    side: :ask,
+      ...>    price_level_index: 2,
+      ...>    price: 70.0,
+      ...>    quantity: 20
+      ...>    })
+      :ok
+      iex> Exchange.send_instruction(exchange_pid, %{
+      ...>    instruction: :update,
+      ...>    side: :bid,
+      ...>    price_level_index: 1,
+      ...>    price: 50.0,
+      ...>    quantity: 40
+      ...>    })
+      :ok
+      iex> Exchange.order_book(exchange_pid, 2)
+      [
+        %{ask_price: 60.0, ask_quantity: 10, bid_price: 50.0, bid_quantity: 40},
+        %{ask_price: 70.0, ask_quantity: 20, bid_price: 40.0, bid_quantity: 40}
+      ]
   """
 
   use GenServer

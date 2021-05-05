@@ -1,10 +1,11 @@
 defprotocol OrderBook do
-  @type order_book :: list(%{
-    bid_price: float(),
-    bid_quantity: integer(),
-    ask_price: float(),
-    ask_quantity: integer()
-  })
+  @type order_book ::
+          list(%{
+            bid_price: float(),
+            bid_quantity: integer(),
+            ask_price: float(),
+            ask_quantity: integer()
+          })
 
   @spec insert(t(), pos_integer(), map()) :: {:ok, t()}
   def insert(order_book, price_level_index, order)
@@ -20,13 +21,13 @@ defprotocol OrderBook do
 end
 
 defmodule ListOrderBook do
-  ~S"""
+  @moduledoc """
   ListOrderBook defines a simple representation of the order book based
   on elixir's List.
 
   An implementation of the OrderBook protocol is provided for the ListOrderBook.
 
-  # Performance
+  ## Performance
 
   Due to the fact that elixir's List is implemented as linked lists, the time complexity
   of the insertion, update and deletion operations is O(n) (where n is the price level index
@@ -140,7 +141,6 @@ defimpl OrderBook, for: ListOrderBook do
 
   defp insert_at([head | tail], pl_index, price, quantity),
     do: [head | insert_at(tail, pl_index - 1, price, quantity)]
-
 
   defp delete_at(list, index) do
     try do
