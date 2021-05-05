@@ -2,7 +2,7 @@ defmodule ExchangeTest do
   use ExUnit.Case
   doctest Exchange
 
-  import Exchange, only: [start_link: 0, send_instruction: 2, order_book: 2]
+  import Exchange, only: [start_link: 0, start_link: 1, send_instruction: 2, order_book: 2]
 
   import TestHelpers,
     only: [new: 2, delete: 2, update: 2, order: 2, order: 1]
@@ -22,10 +22,15 @@ defmodule ExchangeTest do
     Enum.each(events, fn event -> Exchange.send_instruction(ex_pid, event) end)
   end
 
-  setup do
-    {:ok, ex_pid} = start_link()
-
-    [ex_pid: ex_pid]
+  setup context do
+    if context[:with_persistence] do
+      filename = Path.join(System.tmp_dir(), to_string(DateTime.utc_now()))
+      {:ok, ex_pid} = start_link(store: %FileStore{filename: filename})
+      [p_filename: filename, ex_pid: ex_pid]
+    else
+      {:ok, ex_pid} = start_link()
+      [ex_pid: ex_pid]
+    end
   end
 
   test "a price level that has not been provided should have values of zero", %{ex_pid: ex_pid} do
@@ -77,7 +82,9 @@ defmodule ExchangeTest do
            ] == order_book(ex_pid, 2)
   end
 
-  test "update an zero-valued price level created on \"gap-producing\" insertion", %{ex_pid: ex_pid} do
+  test "update an zero-valued price level created on \"gap-producing\" insertion", %{
+    ex_pid: ex_pid
+  } do
     # Create a zero-valued price level at index = 1.
     events = [
       order(:ask, price: test_price(1), quantity: test_quantity(1)) |> new(2)
@@ -257,5 +264,28 @@ defmodule ExchangeTest do
 
     event = order(:bid) |> delete(1)
     assert {:error, :price_level_not_exist} = send_instruction(ex_pid, event)
+  end
+
+  @tag :with_persistence
+  test "with persistent store", %{ex_pid: ex_pid, p_filename: filename} do
+    events = [
+      order(:ask, price: test_price(1), quantity: test_quantity(1)) |> new(1),
+      order(:bid, price: test_price(2), quantity: test_quantity(2)) |> new(1),
+      order(:ask, price: test_price(3), quantity: test_quantity(3)) |> new(2),
+      order(:bid, price: test_price(4), quantity: test_quantity(4)) |> new(2),
+      order(:ask, price: test_price(5), quantity: test_quantity(5)) |> new(3),
+      order(:bid, price: test_price(6), quantity: test_quantity(6)) |> new(3)
+    ]
+
+    send_events(ex_pid, events)
+
+    assert [
+             "new;1;ask;1;10",
+             "new;1;bid;2;20",
+             "new;2;ask;3;30",
+             "new;2;bid;4;40",
+             "new;3;ask;5;50",
+             "new;3;bid;6;60"
+           ] == filename |> File.read!() |> String.trim_trailing("\n") |> String.split("\n")
   end
 end
