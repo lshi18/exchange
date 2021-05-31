@@ -82,6 +82,58 @@ defmodule ExchangeTest do
            ] == order_book(ex_pid, 2)
   end
 
+  test "insert with index which has been created as a zero-valued price level on a \"gap-producing\" insertion",
+       %{
+         ex_pid: ex_pid
+       } do
+    events = [
+      # Create a zero-valued price level at index = 1.
+      order(:ask, price: test_price(1), quantity: test_quantity(1)) |> new(2),
+      # insert at price level = 1
+      order(:ask, price: test_price(2), quantity: test_quantity(2)) |> new(1)
+    ]
+
+    send_events(ex_pid, events)
+
+    # Should it behave as the current implementation?
+    assert [
+             %{
+               ask_price: test_price(2),
+               ask_quantity: test_quantity(2),
+               bid_price: 0,
+               bid_quantity: 0
+             },
+             %{
+               ask_price: 0,
+               ask_quantity: 0,
+               bid_price: 0,
+               bid_quantity: 0
+             },
+             %{
+               ask_price: test_price(1),
+               ask_quantity: test_quantity(1),
+               bid_price: 0,
+               bid_quantity: 0
+             }
+           ] == order_book(ex_pid, 3)
+
+    # Or should it behave like below?
+    # assert [
+    #          %{
+    #            ask_price: test_price(2),
+    #            ask_quantity: test_quantity(2),
+    #            bid_price: 0,
+    #            bid_quantity: 0
+    #          },
+    #          %{
+    #            ask_price: test_price(1),
+    #            ask_quantity: test_quantity(1),
+    #            bid_price: 0,
+    #            bid_quantity: 0
+    #          }
+    #        ] == order_book(ex_pid, 2)
+  end
+
   test "update an zero-valued price level created on \"gap-producing\" insertion", %{
     ex_pid: ex_pid
   } do
