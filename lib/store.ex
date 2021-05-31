@@ -1,4 +1,3 @@
-
 defprotocol Store do
   def open(store)
   def write(store, event)
